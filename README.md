@@ -1,37 +1,10 @@
 # Azure Functions on Docker
 
-New table of contents:
+Experimentation to host Azure Function in Docker containers:
 
-1. Create a basic Azure Function (basic)
-
-    1. Code
-    1. Build  & Local run
-    1. Docker
-    1. Docker Compose
-
-1. Function with an environment variable
-
-    1. Code
-    1. Build  & Local run
-    1. Docker
-    1. Docker Compose
-
-1. Function with Redis cache
-
-    1. Code
-    1. Build  & Local run
-    1. Docker
-    1. Docker Compose
-
-1. Azure Container Registry
-
-    1. Push images to Azure Container Registry
-    1. Run with Docker
-    1. Run with Docker compose
-    1. Run on Raspberry
-    1. Integration with Github Actions
-
-1. Sources
+- Basic function,
+- Function using an environment variable,
+- Function using a Redis cache (a Console application is also available to test the Redis cache, hosted in Docker).
 
 ## Create a basic Azure Function (basic)
 
