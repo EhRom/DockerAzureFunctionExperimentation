@@ -1,0 +1,9 @@
+version: '3'
+services:
+  function:
+    image: dockerexpfunction:0.2
+    container_name: dockercomposeexpfunction
+    environment:
+      TestEnvVariable: DockerComposeFunction
+    ports:
+      - 9099:80
