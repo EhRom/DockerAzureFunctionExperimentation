@@ -608,8 +608,6 @@ Navigate to the following [uri](http://localhost:9090/api/HttpFunction) to test 
 
 ### Run the Azure Function using Docker compose
 
->>> TODO ICI : update code
-
 Update the YAML file named `docker-compose.yml` with the following content :
 
 ```yaml
@@ -675,7 +673,6 @@ docker network rm <network name>
 ```
 
 E.g.: `docker network rm dockerexpnetwork`
-
 
 ## Next steps
 
