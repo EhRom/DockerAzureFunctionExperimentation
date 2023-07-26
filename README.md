@@ -5,6 +5,7 @@ Experimentation to host Azure Function in Docker containers:
 - Basic function,
 - Function using an environment variable,
 - Function using a Redis cache (a Console application is also available to test the Redis cache, hosted in Docker).
+- Function with a timer, using the Azure storage.
 
 ## Create a basic Azure Function (basic)
 
@@ -140,8 +141,16 @@ services:
 
 In the docker compose file directory, run the following command:
 
+- Option 1:
+
 ```bash
 docker-compose up --build -d
+```
+
+- Option 2 (specify file name):
+
+```bash
+docker-compose up -f docker-compose.yml -build -d
 ```
 
 Navigate to the following [uri](http://localhost:9099/api/HttpFunction) to test the function
@@ -155,8 +164,16 @@ Navigate to the following [uri](http://localhost:9099/api/HttpFunction) to test 
 
 Stop the containers created via *docker compose*:
 
+- Option 1:
+
 ```bash
 docker compose down
+```
+
+- Option 2:
+
+```bash
+docker compose down --remove-orphans
 ```
 
 List containers:
@@ -317,7 +334,7 @@ docker-compose up --build -d
 
 Navigate to the following [uri](http://localhost:9099/api/HttpFunction) to test the function
 
-### Clean containers and images
+### Clean containers and image.
 
 cf. previous §.
 
@@ -572,7 +589,7 @@ Build the docker image of the Azure Function App:
 docker build -t <image name>:<version> -f <dockerfile path> . 
 ```
 
-E.g.: `docker build -t dockerexpfunction:0.4 -f .\Dockerfile .`
+E.g.: `docker build -t dockerexpfunction:0.4 -f  .\Dockerfile .`
 
 Create the network:
 
@@ -580,7 +597,7 @@ Create the network:
 docker network create <network name>
 ```
 
-E.g.: `docker network create dockerexpnetwork`
+E.g.: `docker network create dockerexpfunctionnetwork`
 
 List the docker network:
 
@@ -594,7 +611,7 @@ Run the Redis container:
 docker run --name <container-name> -p 6379:6379 --net <network name> -d redis:alpine
 ```
 
-E.g.: `docker run --name redis-console -p 6379:6379 --net dockerexpnetwork -d redis:alpine`
+E.g.: `docker run --name redis-expfunction -p 6379:6379 --net dockerexpfunctionnetwork -d redis:alpine`
 
 Run the container:
 
@@ -602,7 +619,7 @@ Run the container:
 docker run -p <local machine target port>:<container port> --name <container name> --net <network name> -e FUNCTIONS_WORKER_RUNTIME="dotnet-isolated" -e redisConnectionString="<redis host name>.<container name>:<redis port>" -e redisInstanceName="<redis instance name>" <image name>:<version>
 ```
 
-E.g.: `docker run -p 9090:80 --name dockerexpfunction --net dockerexpnetwork -e FUNCTIONS_WORKER_RUNTIME="dotnet-isolated" -e redisConnectionString="redis-console.dockerexpnetwork:6379" -e redisInstanceName="DockerFuncCache" dockerexpfunction:0.4`
+E.g.: `docker run -p 9090:80 --name dockerexpfunction --net dockerexpfunctionnetwork -e FUNCTIONS_WORKER_RUNTIME="dotnet-isolated" -e redisConnectionString="redis-expfunction.dockerexpfunctionnetwork:6379" -e redisInstanceName="EdgeAgentMeasures" dockerexpfunction:0.4`
 
 Navigate to the following [uri](http://localhost:9090/api/HttpFunction) to test the function
 
@@ -674,10 +691,219 @@ docker network rm <network name>
 
 E.g.: `docker network rm dockerexpnetwork`
 
+## Create a function with a timer
+
+Create a function with a timer. An Azrure Function timer trigger requires a valid storage account to work. In a Docker enviroment, [Azurite](https://github.com/Azure/Azurite) could be a candidate (for test purpose). Azurite is deliverd with a [Docker image](https://hub.docker.com/_/microsoft-azure-storage-azurite).
+
+### Test the Azurite docker image
+
+Pull the Azurite image:
+
+```bash
+docker pull mcr.microsoft.com/azure-storage/azurite:latest
+```
+
+Create a container and run it:
+
+```bash
+docker run --name <container-name> -p <blob port on local machine e.g. 10000>:<blob port on container e.g. 10000> -p <queue port on local machine e.g. 10001>:<queue port on container e.g. 10001> -p <table port on local machine e.g. 10002>:<table port on container e.g. 10002> -e AZURITE_ACCOUNTS="<account name>:<account key in Base64>" -v <Absolute path to the local folder e.g. C:\azuritelocalstorage>:/data -d pull mcr.microsoft.com/azure-storage/azurite:latest
+```
+
+E.g.: `docker run --name azurite-local -p 10000:10000 -p 10001:10001 -p 10002:10002 -e AZURITE_ACCOUNTS="local:<REPLACE VALUE: Account Key in Base64>" -v C:\azuritelocalstorage:/data -d mcr.microsoft.com/azure-storage/azurite`
+
+Test the connection to the service with the *Microsoft Azure Storage Explorer* tool.
+
+### Create a timer Function
+
+Add a new Function, named `TimerFunction`, with a timer trigger, with the following content:
+
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+
+namespace DockerExpFunction
+{
+    public class TimerFunction
+    {
+        private readonly ILogger logger;
+
+        public TimerFunction(ILoggerFactory loggerFactory)
+        {
+            logger = loggerFactory.CreateLogger<TimerFunction>();
+        }
+
+        [Function("TimerFunction")]
+        public void Run([TimerTrigger("*/15 * * * * *", UseMonitor = true)] string timerInformationCore)
+        {
+            logger.LogInformation($"C# Timer trigger function executed at: {DateTime.Now}");
+            logger.LogInformation($"Next timer schedule at: {timerInformationCore}");
+        }
+    }
+}
+```
+
+Update the `local.settings.json` with the following content:
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=local;AccountKey=<REPLACE VALUE: Account Key in Base64>;BlobEndpoint=http://127.0.0.1:10000/local;QueueEndpoint=http://127.0.0.1:10001/local;TableEndpoint=http://127.0.0.1:10002/local;",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "redisConnectionString": "localhost:6379",
+    "redisInstanceName": "LocalFuncCache"
+  }
+}
+```
+
+Run the function locally:
+
+```bash
+func start --port 9000
+```
+
+Watch the logs to find the timer execution.
+
+### Run the Azure Function with Docker
+
+Build the docker image of the Azure Function App:
+
+```bash
+docker build -t <image name>:<version> -f <dockerfile path> . 
+```
+
+E.g.: `docker build -t dockerexpfunction:0.5 -f  .\Dockerfile .`
+
+Create the network:
+
+```bash
+docker network create <network name>
+```
+
+E.g.: `docker network create dockerexpfunctionnetwork`
+
+List the docker network:
+
+```bash
+docker network ls
+```
+
+Run the Redis container:
+
+```bash
+docker run --name <container-name> -p 6379:6379 --net <network name> -d redis:alpine
+```
+
+E.g.: `docker run --name redis-expfunction -p 6379:6379 --net dockerexpfunctionnetwork -d redis:alpine`
+
+Run the Azurite container:
+
+```bash
+docker run --name <container-name> -p <blob port on local machine e.g. 10000>:<blob port on container e.g. 10000> -p <queue port on local machine e.g. 10001>:<queue port on container e.g. 10001> -p <table port on local machine e.g. 10002>:<table port on container e.g. 10002> -e AZURITE_ACCOUNTS="<account name>:<account key in Base64>" -v <Absolute path to the local folder e.g. C:\azuritelocalstorage>:/data --net <network name> -d pull mcr.microsoft.com/azure-storage/azurite:latest
+```
+
+E.g.: `docker run --name azurite-local -p 10000:10000 -p 10001:10001 -p 10002:10002 -e AZURITE_ACCOUNTS="local:<REPLACE VALUE: Account Key in Base64>" -v C:\azuritelocalstorage:/data --net dockerexpfunctionnetwork -d mcr.microsoft.com/azure-storage/azurite`
+
+Run the container:
+
+```bash
+docker run -p <local machine target port>:<container port> --name <container name> --net <network name> -e FUNCTIONS_WORKER_RUNTIME="dotnet-isolated" -e redisConnectionString="<redis host name>.<container name>:<redis port>" -e redisInstanceName="<redis instance name>" -e AzureWebJobsStorage="DefaultEndpointsProtocol=http;AccountName=<account name>;AccountKey=<Account Key in Base64>;BlobEndpoint=http://<azurite container name>:10000/<account name>;QueueEndpoint=http://<azurite container name>:10001/<account name>;TableEndpoint=http://<azurite container name>:10002/<account name>;" --net <network name> <image name>:<version>
+```
+
+E.g.: `docker run -p 9090:80 --name dockerexpfunction --net dockerexpfunctionnetwork -e FUNCTIONS_WORKER_RUNTIME="dotnet-isolated" -e redisConnectionString="redis-expfunction.dockerexpfunctionnetwork:6379" -e redisInstanceName="EdgeAgentMeasures" -e AzureWebJobsStorage="DefaultEndpointsProtocol=http;AccountName=local;AccountKey=<REPLACE VALUE: Account Key in Base64>;BlobEndpoint=http://azurite-local:10000/local;QueueEndpoint=http://azurite-local:10001/local;TableEndpoint=http://azurite-local:10002/local;" dockerexpfunction:0.5`
+
+Navigate to the following [uri](http://localhost:9090/api/HttpFunction) to test the function. Check the log to view the timer trigger execution logs.
+
+### Run the Azure Function using Docker compose
+
+>>> TODO ici
+
+Update the YAML file named `docker-compose.yml` with the following content :
+
+```yaml
+version: '3.9'
+services:
+  redis:
+    image: redis:alpine
+    container_name: <redis container name>
+    ports:
+      - <redis local machine target port>:<redis container port>
+  aurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: <azurite container name>
+    hostname: <azurite host name>
+    restart: always
+    environment:
+      AZURITE_ACCOUNTS: "<account name>:<account key in Base64>"
+    ports:
+      - <local machine target blob port>:<container blob port>
+      - <local machine target queue port>:<container queue port>
+      - <local machine target table port>:<container table port>
+    volumes:
+      - <Absolute path to the local folder e.g. C:\azuritelocalstorage>:/data
+  function:
+    image: <image name>:<version>
+    container_name: <compose container name>
+    environment:
+      redisConnectionString: <redis container name>:<redis local machine target port>
+      redisInstanceName: <redis instance name>
+    ports:
+      - <local machine target port>:<container port>
+    depends_on:
+      - <redis hostname>
+      - <azurite hostname>
+```
+
+E.g.:
+
+```yaml
+version: '3.9'
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis-expfunction
+    hostname: redis
+    ports:
+      - 6379:6379
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: azurite-expfunction
+    hostname: azurite
+    restart: always
+    environment:
+      AZURITE_ACCOUNTS: "local:<REPLACE VALUE: Account Key in Base64>"
+    ports:
+      - 10000:10000
+      - 10001:10001
+      - 10002:10002
+    volumes:
+      - C:\azuritestoragee:/data
+  function:
+    image: dockerexpfunction:0.5
+    container_name: dockercomposeexpfunction
+    environment:
+      FUNCTIONS_WORKER_RUNTIME: dotnet-isolated
+      redisConnectionString: redis:6379
+      redisInstanceName: DockerComposeFuncCache
+      AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=local;AccountKey=<REPLACE VALUE: Account Key in Base64>;BlobEndpoint=http://azurite:10000/local;QueueEndpoint=http://azurite:10001/local;TableEndpoint=http://azurite:10002/local;"
+    ports:
+      - 9099:80
+    depends_on:
+      - redis
+      - azurite
+```
+
+In the docker compose file directory, run the following command:
+
+```bash
+docker compose up --build -d
+```
+
+Navigate to the following [uri](http://localhost:9099/api/HttpFunction) to test the function
+
 ## Next steps
 
 - Register the image in Azure Container Registry
-- Test to build the image in the docker compose
 - Run the containers to Rapsberry
 - Add the deconz container
 - Store the docker compose on the Raspberry

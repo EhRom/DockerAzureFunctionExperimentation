@@ -1,0 +1,34 @@
+version: '3.9'
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis-expfunction
+    hostname: redis
+    ports:
+      - 6379:6379
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: azurite-expfunction
+    hostname: azurite
+    restart: always
+    environment:
+      AZURITE_ACCOUNTS: "local:bG9jYWwyMDIzMDcyNA=="
+    ports:
+      - 10000:10000
+      - 10001:10001
+      - 10002:10002
+    volumes:
+      - C:\Projets\Puffix.ConnectedHome\Raspberry\EdgeAgent\azuritestoragee:/data
+  function:
+    image: dockerexpfunction:0.5
+    container_name: dockercomposeexpfunction
+    environment:
+      FUNCTIONS_WORKER_RUNTIME: dotnet-isolated
+      redisConnectionString: redis:6379
+      redisInstanceName: DockerComposeFuncCache
+      AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=local;AccountKey=bG9jYWwyMDIzMDcyNA==;BlobEndpoint=http://azurite:10000/local;QueueEndpoint=http://azurite:10001/local;TableEndpoint=http://azurite:10002/local;"
+    ports:
+      - 9099:80
+    depends_on:
+      - redis
+      - azurite
